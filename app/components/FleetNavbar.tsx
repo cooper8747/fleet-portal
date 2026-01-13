@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Home,
   Menu,
@@ -15,11 +15,9 @@ import { useParams } from "next/navigation";
 // --- SMART URL CONFIGURATION ---
 const isDev = process.env.NODE_ENV === "development";
 
-// Define URLs for both environments
-// These dev ports match the plan: Portal(3000), Vessel(3001), Member(3002), Vendors(3003), Downloads(3004)
 const APPS = {
   portal: {
-    prod: "https://your-portal-url.com", // UPDATE THIS when you know your real Portal URL
+    prod: "https://fleet-portal.vercel.app", // ✅ Updated Production URL
     dev: "http://localhost:3000",
   },
   vessel: {
@@ -40,44 +38,37 @@ const APPS = {
   },
 };
 
-// Helper function to get the current environment's URL
 const getBaseUrl = (appKey: keyof typeof APPS) => {
   return isDev ? APPS[appKey].dev : APPS[appKey].prod;
 };
 
-// --- NAVIGATION CONFIG ---
 const navLinks = [
   {
     name: "Fleet Portal",
-    // Uses contactID if available
     href: `${getBaseUrl("portal")}/:id`,
     icon: <Home size={18} />, 
     type: "contactID" 
   },
   {
     name: "Vessel Activity",
-    // Uses accountID
     href: `${getBaseUrl("vessel")}/:id`,
     icon: <Ship size={18} />,
     type: "accountID"
   },
   {
     name: "Member Activity",
-    // Uses contactID
     href: `${getBaseUrl("member")}/:id`,
     icon: <Users size={18} />,
     type: "contactID"
   },
   {
     name: "Vendor Directory",
-    // Static link (no ID needed)
     href: getBaseUrl("vendors"),
     icon: <BookOpen size={18} />, 
     type: null
   },
   {
     name: "Downloads",
-    // Static link (no ID needed)
     href: getBaseUrl("downloads"),
     icon: <Download size={18} />, 
     type: null
@@ -90,25 +81,42 @@ type FleetNavbarProps = {
 
 export default function FleetNavbar({ manualId }: FleetNavbarProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [storedId, setStoredId] = useState<string | null>(null);
   const params = useParams();
 
-  // 1. Detect any ID present in the current URL
+  // 1. Detect ID from URL
   const candidates = ["contactID", "accountID", "id", "slug"];
-  const detectedId =
+  const urlId =
     manualId ||
     candidates.map((key) => params?.[key]).find((val) => typeof val === "string" && val);
 
-  // 2. Resolve the final link
+  // 2. "Sticky ID" Logic: Save ID if found, Restore if missing
+  useEffect(() => {
+    if (urlId) {
+      // If we have an ID in the URL, save it to memory
+      localStorage.setItem("fleet_latest_id", String(urlId));
+      setStoredId(String(urlId));
+    } else {
+      // If no ID in URL (e.g. Downloads app), try to retrieve from memory
+      const saved = localStorage.getItem("fleet_latest_id");
+      if (saved) setStoredId(saved);
+    }
+  }, [urlId]);
+
+  // Use the ID from the URL first, fallback to the stored memory ID
+  const effectiveId = urlId || storedId;
+
+  // 3. Resolve Link Logic
   const resolveHref = (link: typeof navLinks[0]) => {
     // If static link (no :id placeholder), return as is
     if (!link.href.includes(":id")) return link.href;
 
-    // If we have an ID, inject it
-    if (detectedId) {
-      return link.href.replace(":id", encodeURIComponent(String(detectedId)));
+    // If we have an ID (from URL or Memory), inject it
+    if (effectiveId) {
+      return link.href.replace(":id", encodeURIComponent(String(effectiveId)));
     }
 
-    // Fallback: If no ID is found, strip the placeholder and go to the app root
+    // Fallback: If absolutely no ID is found anywhere, go to root
     try {
       const cleanUrl = link.href.replace("/:id", "");
       return cleanUrl; 
@@ -119,7 +127,6 @@ export default function FleetNavbar({ manualId }: FleetNavbarProps) {
 
   return (
     <>
-      {/* Fixed top navbar */}
       <nav className="fixed top-0 left-0 right-0 z-50 h-14 flex items-center justify-between bg-slate-900 text-white px-4 shadow-md font-sans">
         <Link
           href={resolveHref(navLinks[0])}
