@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import {
   Home,
   Menu,
@@ -10,14 +10,14 @@ import {
   Download,
 } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 
-// --- SMART URL CONFIGURATION ---
+// --- URL CONFIGURATION ---
 const isDev = process.env.NODE_ENV === "development";
 
 const APPS = {
   portal: {
-    prod: "https://fleet-portal.vercel.app", // ✅ Updated Production URL
+    prod: "https://fleet-portal.vercel.app",
     dev: "http://localhost:3000",
   },
   vessel: {
@@ -42,87 +42,83 @@ const getBaseUrl = (appKey: keyof typeof APPS) => {
   return isDev ? APPS[appKey].dev : APPS[appKey].prod;
 };
 
+// Define the links structure
 const navLinks = [
   {
     name: "Fleet Portal",
-    href: `${getBaseUrl("portal")}/:id`,
+    href: `${getBaseUrl("portal")}/:id`, // Dynamic path
     icon: <Home size={18} />, 
-    type: "contactID" 
+    isStatic: false
   },
   {
     name: "Vessel Activity",
-    href: `${getBaseUrl("vessel")}/:id`,
+    href: `${getBaseUrl("vessel")}/:id`, // Dynamic path
     icon: <Ship size={18} />,
-    type: "accountID"
+    isStatic: false
   },
   {
     name: "Member Activity",
-    href: `${getBaseUrl("member")}/:id`,
+    href: `${getBaseUrl("member")}/:id`, // Dynamic path
     icon: <Users size={18} />,
-    type: "contactID"
+    isStatic: false
   },
   {
     name: "Vendor Directory",
-    href: getBaseUrl("vendors"),
+    href: getBaseUrl("vendors"), // Static path (needs ?id=)
     icon: <BookOpen size={18} />, 
-    type: null
+    isStatic: true
   },
   {
     name: "Downloads",
-    href: getBaseUrl("downloads"),
+    href: getBaseUrl("downloads"), // Static path (needs ?id=)
     icon: <Download size={18} />, 
-    type: null
+    isStatic: true
   },
 ];
 
-type FleetNavbarProps = {
-  manualId?: string;
-};
-
-export default function FleetNavbar({ manualId }: FleetNavbarProps) {
+// 1. Create the content component (Inner)
+function NavbarContent({ manualId }: { manualId?: string }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [storedId, setStoredId] = useState<string | null>(null);
-  const params = useParams();
+  
+  // Hooks to grab data from URL
+  const params = useParams(); 
+  const searchParams = useSearchParams();
 
-  // 1. Detect ID from URL
-  const candidates = ["contactID", "accountID", "id", "slug"];
-  const urlId =
-    manualId ||
-    candidates.map((key) => params?.[key]).find((val) => typeof val === "string" && val);
+  // --- ID DETECTION LOGIC ---
+  // A. Check Route Params (e.g. /portal/123)
+  const routeCandidates = ["contactID", "accountID", "id", "slug"];
+  const routeId = routeCandidates
+    .map((key) => params?.[key])
+    .find((val) => typeof val === "string" && val);
 
-  // 2. "Sticky ID" Logic: Save ID if found, Restore if missing
-  useEffect(() => {
-    if (urlId) {
-      // If we have an ID in the URL, save it to memory
-      localStorage.setItem("fleet_latest_id", String(urlId));
-      setStoredId(String(urlId));
-    } else {
-      // If no ID in URL (e.g. Downloads app), try to retrieve from memory
-      const saved = localStorage.getItem("fleet_latest_id");
-      if (saved) setStoredId(saved);
-    }
-  }, [urlId]);
+  // B. Check Query Params (e.g. /downloads?id=123)
+  const queryId = searchParams.get("id");
 
-  // Use the ID from the URL first, fallback to the stored memory ID
-  const effectiveId = urlId || storedId;
+  // C. Final ID Decision
+  const effectiveId = manualId || routeId || queryId;
 
-  // 3. Resolve Link Logic
+  // Debugging: Uncomment if you still have issues to see what the navbar sees
+  // console.log("Navbar Detected:", { routeId, queryId, effectiveId });
+
+  // --- LINK RESOLUTION ---
   const resolveHref = (link: typeof navLinks[0]) => {
-    // If static link (no :id placeholder), return as is
-    if (!link.href.includes(":id")) return link.href;
-
-    // If we have an ID (from URL or Memory), inject it
-    if (effectiveId) {
-      return link.href.replace(":id", encodeURIComponent(String(effectiveId)));
+    // Case 1: Dynamic Route (needs /:id replaced)
+    if (!link.isStatic) {
+      if (effectiveId) {
+        return link.href.replace(":id", encodeURIComponent(String(effectiveId)));
+      }
+      // If no ID, strip the /:id and go to root
+      return link.href.replace("/:id", "");
     }
 
-    // Fallback: If absolutely no ID is found anywhere, go to root
-    try {
-      const cleanUrl = link.href.replace("/:id", "");
-      return cleanUrl; 
-    } catch {
-      return "/";
+    // Case 2: Static Route (Downloads/Vendors)
+    // We must append ?id=123 so the next app knows who we are
+    if (link.isStatic && effectiveId) {
+      const separator = link.href.includes("?") ? "&" : "?";
+      return `${link.href}${separator}id=${encodeURIComponent(String(effectiveId))}`;
     }
+
+    return link.href;
   };
 
   return (
@@ -143,7 +139,7 @@ export default function FleetNavbar({ manualId }: FleetNavbarProps) {
         </button>
       </nav>
 
-      {/* Slide-out drawer overlay */}
+      {/* Overlay */}
       <div
         className={`fixed inset-0 z-40 bg-black/40 transition-opacity duration-300 ${
           isOpen ? "opacity-100 visible" : "opacity-0 invisible"
@@ -152,16 +148,13 @@ export default function FleetNavbar({ manualId }: FleetNavbarProps) {
         aria-hidden={!isOpen}
       />
 
-      {/* Slide-out drawer */}
+      {/* Drawer */}
       <div
         className={
           `fixed top-0 right-0 h-full w-64 bg-slate-800 shadow-xl z-50 transition-transform duration-300 ` +
           (isOpen ? "translate-x-0" : "translate-x-full") +
           " flex flex-col pt-7"
         }
-        role="dialog"
-        aria-modal="true"
-        aria-label="Navigation"
       >
         <button
           className="absolute top-4 right-4 p-1 text-zinc-200 hover:text-white"
@@ -186,5 +179,15 @@ export default function FleetNavbar({ manualId }: FleetNavbarProps) {
         </ul>
       </div>
     </>
+  );
+}
+
+// 2. Export the Wrapped Component
+// We wrap in Suspense because useSearchParams() causes build warnings if not suspended.
+export default function FleetNavbar(props: { manualId?: string }) {
+  return (
+    <Suspense fallback={<div className="h-14 bg-slate-900" />}>
+      <NavbarContent {...props} />
+    </Suspense>
   );
 }
