@@ -10,9 +10,9 @@ import {
   Download,
 } from "lucide-react";
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
+import { useSearchParams, usePathname } from "next/navigation";
 
-// --- URL CONFIGURATION ---
+// --- CONFIGURATION ---
 const isDev = process.env.NODE_ENV === "development";
 
 const APPS = {
@@ -42,77 +42,66 @@ const getBaseUrl = (appKey: keyof typeof APPS) => {
   return isDev ? APPS[appKey].dev : APPS[appKey].prod;
 };
 
-// Define the links structure
 const navLinks = [
   {
     name: "Fleet Portal",
-    href: `${getBaseUrl("portal")}/:id`, // Dynamic path
+    href: `${getBaseUrl("portal")}/:id`, 
     icon: <Home size={18} />, 
     isStatic: false
   },
   {
     name: "Vessel Activity",
-    href: `${getBaseUrl("vessel")}/:id`, // Dynamic path
+    href: `${getBaseUrl("vessel")}/:id`, 
     icon: <Ship size={18} />,
     isStatic: false
   },
   {
     name: "Member Activity",
-    href: `${getBaseUrl("member")}/:id`, // Dynamic path
+    href: `${getBaseUrl("member")}/:id`, 
     icon: <Users size={18} />,
     isStatic: false
   },
   {
     name: "Vendor Directory",
-    href: getBaseUrl("vendors"), // Static path (needs ?id=)
+    href: getBaseUrl("vendors"), 
     icon: <BookOpen size={18} />, 
     isStatic: true
   },
   {
     name: "Downloads",
-    href: getBaseUrl("downloads"), // Static path (needs ?id=)
+    href: getBaseUrl("downloads"), 
     icon: <Download size={18} />, 
     isStatic: true
   },
 ];
 
-// 1. Create the content component (Inner)
 function NavbarContent({ manualId }: { manualId?: string }) {
   const [isOpen, setIsOpen] = useState(false);
-  
-  // Hooks to grab data from URL
-  const params = useParams(); 
   const searchParams = useSearchParams();
+  const pathname = usePathname();
 
-  // --- ID DETECTION LOGIC ---
-  // A. Check Route Params (e.g. /portal/123)
-  const routeCandidates = ["contactID", "accountID", "id", "slug"];
-  const routeId = routeCandidates
-    .map((key) => params?.[key])
-    .find((val) => typeof val === "string" && val);
-
-  // B. Check Query Params (e.g. /downloads?id=123)
+  // --- BRUTE FORCE ID DETECTION ---
+  // 1. Check for explicit "?id=..." in URL
   const queryId = searchParams.get("id");
 
-  // C. Final ID Decision
-  const effectiveId = manualId || routeId || queryId;
+  // 2. Check for long number in the path (Zoho IDs are 18-19 digits)
+  // This splits the URL /portal/703911... into parts and finds the number.
+  const pathId = pathname?.split("/").find(segment => /^\d{10,}$/.test(segment));
 
-  // Debugging: Uncomment if you still have issues to see what the navbar sees
-  // console.log("Navbar Detected:", { routeId, queryId, effectiveId });
+  // 3. Final Decision
+  const effectiveId = manualId || queryId || pathId;
 
   // --- LINK RESOLUTION ---
   const resolveHref = (link: typeof navLinks[0]) => {
-    // Case 1: Dynamic Route (needs /:id replaced)
+    // Case A: Dynamic Route (Needs /:id)
     if (!link.isStatic) {
       if (effectiveId) {
         return link.href.replace(":id", encodeURIComponent(String(effectiveId)));
       }
-      // If no ID, strip the /:id and go to root
-      return link.href.replace("/:id", "");
+      return link.href.replace("/:id", ""); // Fallback to root if no ID
     }
 
-    // Case 2: Static Route (Downloads/Vendors)
-    // We must append ?id=123 so the next app knows who we are
+    // Case B: Static Route (Downloads/Vendors) -> Needs ?id= appended
     if (link.isStatic && effectiveId) {
       const separator = link.href.includes("?") ? "&" : "?";
       return `${link.href}${separator}id=${encodeURIComponent(String(effectiveId))}`;
@@ -139,7 +128,7 @@ function NavbarContent({ manualId }: { manualId?: string }) {
         </button>
       </nav>
 
-      {/* Overlay */}
+      {/* Mobile Drawer Overlay */}
       <div
         className={`fixed inset-0 z-40 bg-black/40 transition-opacity duration-300 ${
           isOpen ? "opacity-100 visible" : "opacity-0 invisible"
@@ -148,7 +137,7 @@ function NavbarContent({ manualId }: { manualId?: string }) {
         aria-hidden={!isOpen}
       />
 
-      {/* Drawer */}
+      {/* Mobile Drawer Content */}
       <div
         className={
           `fixed top-0 right-0 h-full w-64 bg-slate-800 shadow-xl z-50 transition-transform duration-300 ` +
@@ -182,8 +171,6 @@ function NavbarContent({ manualId }: { manualId?: string }) {
   );
 }
 
-// 2. Export the Wrapped Component
-// We wrap in Suspense because useSearchParams() causes build warnings if not suspended.
 export default function FleetNavbar(props: { manualId?: string }) {
   return (
     <Suspense fallback={<div className="h-14 bg-slate-900" />}>
