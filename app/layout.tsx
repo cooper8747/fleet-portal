@@ -31,8 +31,8 @@ export default function RootLayout({
       >
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           
-          {/* Navbar inside ThemeProvider so it can use theme toggles */}
-          <FleetNavbar />
+          {/* UPDATED: Added currentApp="portal" so the navbar knows who it is */}
+          <FleetNavbar currentApp="portal" />
 
           {/* Main wrapper with padding to prevent Navbar overlap */}
           <main className="pt-14 min-h-screen">

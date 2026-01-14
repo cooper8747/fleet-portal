@@ -23,12 +23,12 @@ const APPS = {
     idType: "contact", // Portal routes are /:contactId
   },
   vessel: {
-    prod: "https://v0-cruising-fleet-member-activity.vercel.app",
+    prod: "https://v0-cruising-fleet-member-activity.vercel.app", // Check this URL matches your actual Vercel project
     dev: "http://localhost:3001",
     idType: "account", // Vessel routes are /:accountId
   },
   member: {
-    prod: "https://cruisingfleet.vercel.app",
+    prod: "https://fleet-member-activity.vercel.app", // Updated based on your video
     dev: "http://localhost:3002",
     idType: "contact", // Member routes are /:contactId
   },
@@ -48,25 +48,6 @@ const getBaseUrl = (appKey: keyof typeof APPS) => {
   return isDev ? APPS[appKey].dev : APPS[appKey].prod;
 };
 
-// Identify which app we are currently inside based on the hostname/port
-const getCurrentAppType = (hostname: string, port: string) => {
-  if (isDev) {
-    if (port === "3000") return "portal";
-    if (port === "3001") return "vessel";
-    if (port === "3002") return "member";
-    if (port === "3003") return "vendors";
-    if (port === "3004") return "downloads";
-  } else {
-    // Basic domain matching for production
-    if (hostname.includes("fleet-portal")) return "portal";
-    if (hostname.includes("member-activity")) return "vessel";
-    if (hostname.includes("cruisingfleet")) return "member";
-    if (hostname.includes("fleet-vendors")) return "vendors";
-    if (hostname.includes("fleet-downloads")) return "downloads";
-  }
-  return "portal"; // Default fallback
-};
-
 const navLinks = [
   { name: "Fleet Portal", key: "portal", icon: <Home size={18} /> },
   { name: "Vessel Activity", key: "vessel", icon: <Ship size={18} /> },
@@ -75,13 +56,17 @@ const navLinks = [
   { name: "Downloads", key: "downloads", icon: <Download size={18} /> },
 ];
 
-function NavbarContent() {
+// Accepted props for the Navbar
+type FleetNavbarProps = {
+  currentApp: "portal" | "vessel" | "member" | "vendors" | "downloads";
+};
+
+function NavbarContent({ currentApp }: FleetNavbarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const searchParams = useSearchParams();
   const pathname = usePathname();
 
   // 1. DETERMINE CURRENT STATE
-  // We need to know: "What IDs do I have right now?"
   let currentContactId = searchParams.get("contactId");
   let currentAccountId = searchParams.get("accountId");
 
@@ -89,47 +74,39 @@ function NavbarContent() {
   const pathId = pathname?.split("/").find((segment) => /^\d{10,}$/.test(segment));
 
   if (pathId) {
-    // We found an ID in the path! But is it a Contact or Account ID?
-    // We check which app we are running to decide.
-    const port = typeof window !== "undefined" ? window.location.port : "";
-    const hostname = typeof window !== "undefined" ? window.location.hostname : "";
-    const currentApp = getCurrentAppType(hostname, port);
-    const idType = APPS[currentApp as keyof typeof APPS].idType;
+    // Because we passed `currentApp` as a prop, we know exactly what this ID is.
+    const idType = APPS[currentApp].idType;
 
     if (idType === "contact") currentContactId = pathId;
     if (idType === "account") currentAccountId = pathId;
   }
 
-  // Fallback: If we are missing an ID, check LocalStorage (The "Memory")
+  // Fallback: Check LocalStorage (The "Memory")
   if (typeof window !== "undefined") {
     if (!currentContactId) currentContactId = localStorage.getItem("fleet_contact_id");
     if (!currentAccountId) currentAccountId = localStorage.getItem("fleet_account_id");
     
-    // Save whatever we found back to memory so it sticks
+    // Save whatever we found back to memory
     if (currentContactId) localStorage.setItem("fleet_contact_id", currentContactId);
     if (currentAccountId) localStorage.setItem("fleet_account_id", currentAccountId);
   }
 
   // 2. BUILD THE LINKS
-  const resolveHref = (appKey: string) => {
-    const config = APPS[appKey as keyof typeof APPS];
-    const baseUrl = getBaseUrl(appKey as keyof typeof APPS);
+  const resolveHref = (targetAppKey: string) => {
+    const config = APPS[targetAppKey as keyof typeof APPS];
+    const baseUrl = getBaseUrl(targetAppKey as keyof typeof APPS);
 
     // Build the "Backpack" (Query Params)
     const params = new URLSearchParams();
     if (currentContactId) params.set("contactId", currentContactId);
     if (currentAccountId) params.set("accountId", currentAccountId);
 
-    // --- STRICT LINK BUILDING ---
-    
     // CASE 1: Portal or Member App (MUST use ContactID in path)
     if (config.idType === "contact") {
       if (currentContactId) {
         params.delete("contactId"); // It's in the path, remove from query
         return `${baseUrl}/${currentContactId}?${params.toString()}`;
       }
-      // If we DON'T have a ContactID, we cannot send them to /:id.
-      // We send them to root, but keep the backpack in case the app can recover.
       return `${baseUrl}?${params.toString()}`;
     } 
     
@@ -139,8 +116,6 @@ function NavbarContent() {
         params.delete("accountId"); // It's in the path, remove from query
         return `${baseUrl}/${currentAccountId}?${params.toString()}`;
       }
-      // If we don't have AccountID, send to root. 
-      // The Vessel App's page.tsx logic will see the contactId in the query and redirect!
       return `${baseUrl}?${params.toString()}`; 
     } 
     
@@ -209,10 +184,10 @@ function NavbarContent() {
   );
 }
 
-export default function FleetNavbar() {
+export default function FleetNavbar(props: FleetNavbarProps) {
   return (
     <Suspense fallback={<div className="h-14 bg-slate-900" />}>
-      <NavbarContent />
+      <NavbarContent {...props} />
     </Suspense>
   );
 }
