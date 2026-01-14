@@ -49,7 +49,6 @@ const getBaseUrl = (appKey: keyof typeof APPS) => {
 };
 
 // Identify which app we are currently inside based on the hostname/port
-// This helps us know if the number in the URL is a ContactID or AccountID
 const getCurrentAppType = (hostname: string, port: string) => {
   if (isDev) {
     if (port === "3000") return "portal";
@@ -60,7 +59,7 @@ const getCurrentAppType = (hostname: string, port: string) => {
   } else {
     // Basic domain matching for production
     if (hostname.includes("fleet-portal")) return "portal";
-    if (hostname.includes("member-activity")) return "vessel"; // Match unique part of vessel domain
+    if (hostname.includes("member-activity")) return "vessel";
     if (hostname.includes("cruisingfleet")) return "member";
     if (hostname.includes("fleet-vendors")) return "vendors";
     if (hostname.includes("fleet-downloads")) return "downloads";
@@ -92,7 +91,6 @@ function NavbarContent() {
   if (pathId) {
     // We found an ID in the path! But is it a Contact or Account ID?
     // We check which app we are running to decide.
-    // (Note: In strict browser environments we check window.location)
     const port = typeof window !== "undefined" ? window.location.port : "";
     const hostname = typeof window !== "undefined" ? window.location.hostname : "";
     const currentApp = getCurrentAppType(hostname, port);
@@ -113,42 +111,41 @@ function NavbarContent() {
   }
 
   // 2. BUILD THE LINKS
-  // Every link we generate must include BOTH IDs (one in the path, one in the query)
   const resolveHref = (appKey: string) => {
     const config = APPS[appKey as keyof typeof APPS];
     const baseUrl = getBaseUrl(appKey as keyof typeof APPS);
 
-    // Build the Query String (The Backpack)
-    // If the target app is "contact" based, we put accountId in the backpack, and vice versa.
-    // For static apps (vendors), we put BOTH in the backpack.
+    // Build the "Backpack" (Query Params)
     const params = new URLSearchParams();
     if (currentContactId) params.set("contactId", currentContactId);
     if (currentAccountId) params.set("accountId", currentAccountId);
 
+    // --- STRICT LINK BUILDING ---
+    
+    // CASE 1: Portal or Member App (MUST use ContactID in path)
     if (config.idType === "contact") {
-      // TARGET: Contact Based (Portal/Member) -> Path = ContactID
       if (currentContactId) {
-        // We use the ID in path, remove it from query to keep URL clean
-        params.delete("contactId"); 
+        params.delete("contactId"); // It's in the path, remove from query
         return `${baseUrl}/${currentContactId}?${params.toString()}`;
       }
-      return `${baseUrl}?${params.toString()}`; // Fallback to root if no contact ID
+      // If we DON'T have a ContactID, we cannot send them to /:id.
+      // We send them to root, but keep the backpack in case the app can recover.
+      return `${baseUrl}?${params.toString()}`;
     } 
     
+    // CASE 2: Vessel App (MUST use AccountID in path)
     else if (config.idType === "account") {
-      // TARGET: Account Based (Vessel) -> Path = AccountID
       if (currentAccountId) {
-        params.delete("accountId");
+        params.delete("accountId"); // It's in the path, remove from query
         return `${baseUrl}/${currentAccountId}?${params.toString()}`;
       }
-      // If we don't have an AccountID yet (e.g. from Portal), we might link to root
-      // OR we link to the app and pass contactId so IT can look it up.
+      // If we don't have AccountID, send to root. 
+      // The Vessel App's page.tsx logic will see the contactId in the query and redirect!
       return `${baseUrl}?${params.toString()}`; 
     } 
     
+    // CASE 3: Static Apps (Vendors/Downloads)
     else {
-      // TARGET: Static (Downloads/Vendors) -> Path = Base
-      // Both IDs stay in the query params
       return `${baseUrl}?${params.toString()}`;
     }
   };
@@ -171,7 +168,6 @@ function NavbarContent() {
         </button>
       </nav>
 
-      {/* Drawer Overlay */}
       <div
         className={`fixed inset-0 z-40 bg-black/40 transition-opacity duration-300 ${
           isOpen ? "opacity-100 visible" : "opacity-0 invisible"
@@ -180,7 +176,6 @@ function NavbarContent() {
         aria-hidden={!isOpen}
       />
 
-      {/* Drawer Content */}
       <div
         className={
           `fixed top-0 right-0 h-full w-64 bg-slate-800 shadow-xl z-50 transition-transform duration-300 ` +
