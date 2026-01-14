@@ -1,9 +1,7 @@
+"use client";
+
 import { apps } from "../apps";
 import { Suspense } from "react";
-// We don't need "use client" for the main logic if this is a server component, 
-// but since you had it, we'll keep it to avoid breaking your DarkModeToggle.
-"use client"; 
-
 import DarkModeToggle from "./components/DarkModeToggle";
 
 // --- URL CONFIGURATION (Matches Navbar) ---
