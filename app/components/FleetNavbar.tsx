@@ -1,5 +1,5 @@
 "use client";
-import { useState, Suspense } from "react";
+import { useState, Suspense, useEffect } from "react";
 import {
   Home,
   Menu,
@@ -15,22 +15,21 @@ import { useSearchParams, usePathname } from "next/navigation";
 // --- CONFIGURATION ---
 const isDev = process.env.NODE_ENV === "development";
 
-// We define not just the URL, but which ID type that app expects in the main path
 const APPS = {
   portal: {
     prod: "https://fleet-portal.vercel.app",
     dev: "http://localhost:3000",
-    idType: "contact", // Portal routes are /:contactId
+    idType: "contact",
   },
   vessel: {
-    prod: "https://v0-cruising-fleet-member-activity.vercel.app", // Check this URL matches your actual Vercel project
+    prod: "https://v0-cruising-fleet-member-activity.vercel.app",
     dev: "http://localhost:3001",
-    idType: "account", // Vessel routes are /:accountId
+    idType: "account",
   },
   member: {
-    prod: "https://fleet-member-activity.vercel.app", // Updated based on your video
+    prod: "https://fleet-member-activity.vercel.app",
     dev: "http://localhost:3002",
-    idType: "contact", // Member routes are /:contactId
+    idType: "contact",
   },
   vendors: {
     prod: "https://fleet-vendors.vercel.app",
@@ -56,7 +55,6 @@ const navLinks = [
   { name: "Downloads", key: "downloads", icon: <Download size={18} /> },
 ];
 
-// Accepted props for the Navbar
 type FleetNavbarProps = {
   currentApp: "portal" | "vessel" | "member" | "vendors" | "downloads";
 };
@@ -70,25 +68,39 @@ function NavbarContent({ currentApp }: FleetNavbarProps) {
   let currentContactId = searchParams.get("contactId");
   let currentAccountId = searchParams.get("accountId");
 
-  // Brute Force: Find any long number in the path
+  // Get ID from path
   const pathId = pathname?.split("/").find((segment) => /^\d{10,}$/.test(segment));
 
   if (pathId) {
-    // Because we passed `currentApp` as a prop, we know exactly what this ID is.
     const idType = APPS[currentApp].idType;
-
     if (idType === "contact") currentContactId = pathId;
     if (idType === "account") currentAccountId = pathId;
   }
 
-  // Fallback: Check LocalStorage (The "Memory")
+  // --- SELF-HEALING & MEMORY LOGIC ---
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    // A. Sanity Check: If on Vessel App, the path ID is an AccountID. 
+    // If our stored "ContactID" matches this AccountID, it's POISON. Delete it.
+    if (currentApp === "vessel" && pathId) {
+        const storedContact = localStorage.getItem("fleet_contact_id");
+        if (storedContact === pathId) {
+            console.log("⚠️ Detected Poisoned Memory! Clearing invalid Contact ID.");
+            localStorage.removeItem("fleet_contact_id");
+        }
+    }
+
+    // B. Save Valid IDs to Memory
+    if (currentContactId) localStorage.setItem("fleet_contact_id", currentContactId);
+    if (currentAccountId) localStorage.setItem("fleet_account_id", currentAccountId);
+
+  }, [currentContactId, currentAccountId, currentApp, pathId]);
+
+  // C. Load from Memory (Only if we don't have one yet)
   if (typeof window !== "undefined") {
     if (!currentContactId) currentContactId = localStorage.getItem("fleet_contact_id");
     if (!currentAccountId) currentAccountId = localStorage.getItem("fleet_account_id");
-    
-    // Save whatever we found back to memory
-    if (currentContactId) localStorage.setItem("fleet_contact_id", currentContactId);
-    if (currentAccountId) localStorage.setItem("fleet_account_id", currentAccountId);
   }
 
   // 2. BUILD THE LINKS
@@ -96,31 +108,23 @@ function NavbarContent({ currentApp }: FleetNavbarProps) {
     const config = APPS[targetAppKey as keyof typeof APPS];
     const baseUrl = getBaseUrl(targetAppKey as keyof typeof APPS);
 
-    // Build the "Backpack" (Query Params)
     const params = new URLSearchParams();
     if (currentContactId) params.set("contactId", currentContactId);
     if (currentAccountId) params.set("accountId", currentAccountId);
 
-    // CASE 1: Portal or Member App (MUST use ContactID in path)
     if (config.idType === "contact") {
       if (currentContactId) {
-        params.delete("contactId"); // It's in the path, remove from query
+        params.delete("contactId");
         return `${baseUrl}/${currentContactId}?${params.toString()}`;
       }
       return `${baseUrl}?${params.toString()}`;
-    } 
-    
-    // CASE 2: Vessel App (MUST use AccountID in path)
-    else if (config.idType === "account") {
+    } else if (config.idType === "account") {
       if (currentAccountId) {
-        params.delete("accountId"); // It's in the path, remove from query
+        params.delete("accountId");
         return `${baseUrl}/${currentAccountId}?${params.toString()}`;
       }
-      return `${baseUrl}?${params.toString()}`; 
-    } 
-    
-    // CASE 3: Static Apps (Vendors/Downloads)
-    else {
+      return `${baseUrl}?${params.toString()}`;
+    } else {
       return `${baseUrl}?${params.toString()}`;
     }
   };
@@ -143,6 +147,7 @@ function NavbarContent({ currentApp }: FleetNavbarProps) {
         </button>
       </nav>
 
+      {/* Drawer Overlay */}
       <div
         className={`fixed inset-0 z-40 bg-black/40 transition-opacity duration-300 ${
           isOpen ? "opacity-100 visible" : "opacity-0 invisible"
@@ -151,6 +156,7 @@ function NavbarContent({ currentApp }: FleetNavbarProps) {
         aria-hidden={!isOpen}
       />
 
+      {/* Drawer Content */}
       <div
         className={
           `fixed top-0 right-0 h-full w-64 bg-slate-800 shadow-xl z-50 transition-transform duration-300 ` +
